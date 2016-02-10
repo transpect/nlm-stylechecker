@@ -44,6 +44,7 @@
   </tr:store-debug>
 
   <tr:errorPI2svrl name="errorPI2svrl" severity="warning">
+    <p:with-option name="group-by-srcpath" select="'no'"/>
     <p:with-option name="debug" select="$debug"/>
     <p:with-option name="debug-dir-uri" select="$debug-dir-uri"/>
     <p:with-option name="status-dir-uri" select="$status-dir-uri"/>
