@@ -21,7 +21,7 @@
   </p:input>
   <p:input port="parameters" kind="parameter" primary="true"/>
 
-  <p:output port="report" primary="true">
+  <p:output port="report" primary="true" sequence="true">
     <p:documentation>SVRL report</p:documentation>
     <p:pipe step="errorPI2svrl" port="report"/>
   </p:output>
