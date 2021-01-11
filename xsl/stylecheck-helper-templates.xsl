@@ -136,6 +136,7 @@
           <xsl:value-of select="concat(' ', $error-type)"/>
           <xsl:text>: </xsl:text>
           <xsl:value-of select="$description"/>
+          <xsl:text>&#x20;</xsl:text>
           <xsl:if test="$class-type='error'">
             <xsl:value-of select="'ERR'"/>
           </xsl:if>
