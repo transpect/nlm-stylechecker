@@ -4,6 +4,7 @@
    xmlns:xlink="http://www.w3.org/1999/xlink" 
    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xmlns:mml="http://www.w3.org/1998/Math/MathML" 
+	xmlns:ali="http://www.niso.org/schemas/ali/1.0/"
    version="1.0">
  
 
@@ -14,7 +15,7 @@
 	 named template that implements the logic of the style test. This has
 	 been done because multiple elements may need to apply the same test.
 	 Once tests have been applied, each template then copies the current
-	 context to the result true by calling a special "output" mode.
+	 context to the result tree by calling a special "output" mode.
   -->
 <!-- ######################################################################## -->
 
@@ -22,10 +23,12 @@
    <!-- Match: abbrev
         1) cannot be empty
         2) check xlink:href content
+        3) check xmlns:xlink
      -->
 	<xsl:template match="abbrev">
 		<xsl:call-template name="empty-element-check"/>
       <xsl:call-template name="href-content-check"/>
+	  <xsl:call-template name="xlink-ns-check"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
@@ -41,16 +44,21 @@
            "Abstract" 
 		  5) If manuscript, do not allow attributes.
         -->
-	<xsl:template match="abstract">
+	 <xsl:template match="abstract">
 		<xsl:call-template name="check-abstract-content"/>
 		<xsl:call-template name="check-abstract-type"/>
 		<xsl:call-template name="empty-element-check"/>
 		<!--<xsl:call-template name="abstract-title-test"/>-->
 		<xsl:call-template name="abstract-sec-test"/>
 		<xsl:call-template name="article-pi-check"/>
-		<xsl:if test="$stream='manuscript'">
+	 <!--=======================================-->  
+	   <!--Removed this test, KP 2015-11-03
+	   Manuscript to follow PMC rules-->
+	<!--=======================================--> 
+		<!--<xsl:if test="$stream='manuscript'">
 			<xsl:call-template name="abstract-attribute-test"/>
-		</xsl:if>
+		</xsl:if>-->
+	<!--=======================================--> 
 		<xsl:apply-templates select="." mode="output"/>
 	</xsl:template>
 
@@ -59,11 +67,14 @@
         1) should not appear in body
         2) cannot be empty
 		  3) If manuscript, must have appropriate ID
+		4) If book and a main unit, must have title and ID  
      -->
    <xsl:template match="ack">
       <xsl:call-template name="empty-element-check"/>
       <xsl:call-template name="back-element-check"/>
 		<xsl:call-template name="ms-stream-id-test"/>
+      <xsl:call-template name="book-main-unit-check"/>
+      <xsl:call-template name="book-stream-id-test"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
@@ -94,13 +105,26 @@
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
+	<!-- *********************************************************** -->
+	<!-- Match: ali:license_ref
+         1) if it contains a CC license, then it must be a valid one
+     -->
+	<xsl:template match="ali:license_ref">
+		<xsl:call-template name="license-cc-url-check">
+			<xsl:with-param name="href" select="."/>
+		</xsl:call-template>
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>
+
    <!-- *********************************************************** -->
    <!-- Match: alternatives
          1) only allowed in certain elements
          2) content is based on parent
      -->
    <xsl:template match="alternatives">
-		<xsl:call-template name="alternatives-parent-check"/>
+        	<xsl:if test="$stream != 'book'">
+			<xsl:call-template name="alternatives-parent-check"/>
+		</xsl:if>
 		<xsl:call-template name="alternatives-content-check"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
@@ -136,6 +160,7 @@
    <xsl:template match="app">
       <xsl:call-template name="empty-element-check"/>
 		<xsl:call-template name="ms-stream-id-test"/>
+      <xsl:call-template name="book-stream-id-test"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
@@ -145,6 +170,7 @@
      -->
 	<xsl:template match="app-group">   
 		<xsl:call-template name="empty-element-check"/>
+		<xsl:call-template name="book-stream-id-test"/>
 		<xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
@@ -206,7 +232,9 @@
         1) must have pub-id-type and must be correct value
         2) element must have content
         3) If contains doi, must be right format 
-		  4) If pub-id-type is "manuscript" the article must include the <?properties manuscript?> PI
+        4) If pub-id-type is "manuscript" the article must include the <?properties manuscript?> PI
+        5) If @custom-type is present, value of @pub-id-type must be "custom";
+           if @pub-id-type="custom", @custom-type must be present and non-empty
      -->
    <!-- *********************************************************** -->
    <xsl:template match="article-id">  
@@ -214,19 +242,26 @@
          <xsl:with-param name="context" select="@pub-id-type"/>
          <xsl:with-param name="attribute-name" select="'pub-id-type'"/>
          <xsl:with-param name="test-name" select="'pub-id-type attribute check'"/>
-			</xsl:call-template>
+      </xsl:call-template>
       <xsl:call-template name="pub-id-type-check"/>
+      <xsl:call-template name="dup-pub-id-type-check"/>
       <xsl:call-template name="article-id-content-check"/>
       <xsl:if test="@pub-id-type = 'doi'">
-			<xsl:call-template name="doi-check">
-				<xsl:with-param name="value" select="."/>
-				</xsl:call-template>
-			</xsl:if>
-		<xsl:if test="$stream='manuscript' and @pub-id-type='manuscript'">
-			<xsl:call-template name="ms-whitespace-check"/>
-			</xsl:if>
+         <xsl:call-template name="doi-check">
+            <xsl:with-param name="value" select="."/>
+         </xsl:call-template>
+      </xsl:if>
+      <xsl:if test="$stream='manuscript' and @pub-id-type='manuscript'">
+         <xsl:call-template name="ms-whitespace-check"/>
+      </xsl:if>
+      <xsl:if test="@custom-type or @pub-id-type='custom'">
+         <xsl:call-template name="custom-type-check">
+            <xsl:with-param name="standard-type" select="@pub-id-type"/>
+            <xsl:with-param name="attribute-name" select="'pub-id-type'"/>
+         </xsl:call-template>
+      </xsl:if>
       <xsl:apply-templates select="." mode="output"/>
-		</xsl:template>
+   </xsl:template>
 
    <!-- *********************************************************** -->
    <!-- Match: article-meta
@@ -235,7 +270,8 @@
         3) needs at least on heading subj-group
 		  4) article must have an fpage or elocation-id
 		  5) manuscript may not have most citation info
-		  6) manuscript may not have more than one abstract
+		  6) manuscript may have more than one abstract
+		  (change on 2015-11-03 KP)
      -->
 	<xsl:template match="article-meta">
 		<xsl:call-template name="empty-element-check"/>
@@ -250,13 +286,13 @@
 				<xsl:when test="$stream='article'">
 					<xsl:call-template name="fpage-check"/>
 					<xsl:call-template name="pub-date-check"/>
-					<xsl:if test="contains(//processing-instruction('properties'),'manuscript')">
+					<xsl:if test="contains(//processing-instruction('properties'),'manuscript') and not(//processing-instruction('origin')[normalize-space(.) = 'gatesmanu'])">
 						<xsl:call-template name="ms-article-id-test"/>
 					</xsl:if>
 				</xsl:when>
 				<xsl:when test="$stream='manuscript'">
 					<xsl:call-template name="ms-article-meta-content-test"/>
-					<xsl:call-template name="ms-article-meta-abstract-test"/>
+					<!--<xsl:call-template name="ms-article-meta-abstract-test"/>-->
 					<!--	<xsl:call-template name="ms-article-id-test"/>  -->
 				</xsl:when>
 			</xsl:choose>
@@ -283,12 +319,34 @@
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
+	<!-- *********************************************************** -->
+	<!-- Match: article-version
+        1) check xmlns:xlink
+     -->
+	<xsl:template match="article-version">
+		<xsl:call-template name="xlink-ns-check"/>
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>
+	
+	<!-- *********************************************************** -->
+	<!-- Match: award-desc
+			1) cannot be empty.
+			2) check xmlns:xlink
+			-->
+	<xsl:template match="award-desc">   
+		<xsl:call-template name="empty-element-check"/>
+		<xsl:call-template name="xlink-ns-check"/>
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>
+
    <!-- *********************************************************** -->
    <!-- Match: award-group
 			1) cannot be empty.
+			2) check xmlns:xlink
 			-->
    <xsl:template match="award-group">   
       <xsl:call-template name="empty-element-check"/>
+      <xsl:call-template name="xlink-ns-check"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 			
@@ -298,9 +356,21 @@
 			-->
    <xsl:template match="award-id">   
       <xsl:call-template name="empty-element-check"/>
+   	<xsl:call-template name="xlink-ns-check"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
-			
+	
+	<!-- *********************************************************** -->
+	<!-- Match: award-name
+        1) cannot be empty.
+		2) check xmlns:xlink
+     -->
+	<xsl:template match="award-name">
+		<xsl:call-template name="empty-element-check"/>
+		<xsl:call-template name="xlink-ns-check"/>
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>
+	
 
    <!-- ********************************************* -->
    <!-- Match: back
@@ -322,10 +392,15 @@
    <!-- Match: bio
         1) check href content
 		  2) cannot be empty
+		  3) If book and a main unit, must have title and ID
+		  4) check xmlns:xlink
      -->
    <xsl:template match="bio">   
 		<xsl:call-template name="href-content-check"/>
       <xsl:call-template name="empty-element-check"/>
+      <xsl:call-template name="book-main-unit-check"/>
+      <xsl:call-template name="book-stream-id-test"/>
+   	<xsl:call-template name="xlink-ns-check"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
@@ -352,6 +427,28 @@
       <xsl:apply-templates select="." mode="output"/>
     </xsl:template>
     
+   <!-- *********************************************************** -->
+   <!-- Match: book-app (BITS2)
+        1) cannot be empty 
+        2) If book and a main unit, must have title and ID
+     -->
+   <xsl:template match="book-app">
+      <xsl:call-template name="empty-element-check"/>
+   	 <xsl:call-template name="book-main-unit-check"/>
+      <xsl:apply-templates select="." mode="output"/>
+    </xsl:template>
+    
+   <!-- *********************************************************** -->
+   <!-- Match: book-app-group (BITS2)
+        1) cannot be empty 
+        2) must have an ID
+     -->
+   <xsl:template match="book-app-group">
+      <xsl:call-template name="empty-element-check"/>
+      <xsl:call-template name="book-stream-id-test"/>
+      <xsl:apply-templates select="." mode="output"/>
+    </xsl:template>
+    
     
    <!-- *********************************************************** -->
    <!-- Match: book-back (BITS)
@@ -371,8 +468,54 @@
       <xsl:call-template name="empty-element-check"/>
       <xsl:apply-templates select="." mode="output"/>
     </xsl:template>
+	
+	<!-- *********************************************************** -->
+	<!-- Match: book-id (BITS)
+       Tests: 
+        1) cannot be empty 
+        2) must have book-id-type
+        3) If contains doi, must be right format 
+     -->
+	<xsl:template match="book-id">
+		<xsl:call-template name="empty-element-check"/>
+		<xsl:call-template name="attribute-present-not-empty">
+			<xsl:with-param name="context" select="@book-id-type | @pub-id-type"/>
+			<xsl:with-param name="attribute-name">
+				<xsl:choose>
+					<xsl:when test="starts-with($dtd-version, 'b')">book-id-type</xsl:when>
+					<xsl:otherwise>pub-id-type</xsl:otherwise>
+				</xsl:choose>
+			</xsl:with-param>
+			<xsl:with-param name="test-name">
+				<xsl:choose>
+					<xsl:when test="starts-with($dtd-version, 'b')">pub-id-type attribute check</xsl:when>
+					<xsl:otherwise>book-id-type attribute check</xsl:otherwise>					
+				</xsl:choose>
+			</xsl:with-param>
+		</xsl:call-template>
+		<xsl:if test="@book-id-type = 'doi' or @pub-id-type = 'doi'">
+			<xsl:call-template name="doi-check">
+				<xsl:with-param name="value" select="."/>
+			</xsl:call-template>
+		</xsl:if>
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>	
 
-
+	<!-- *********************************************************** -->
+	<!-- Match: book-meta 
+        1) must include book-title-group
+        2) must include publisher
+     -->
+	<xsl:template match="book-meta">
+		<xsl:call-template name="child-present">
+			<xsl:with-param name="child" select="'book-title-group'"/>
+		</xsl:call-template>
+		<xsl:call-template name="child-present">
+			<xsl:with-param name="child" select="'publisher'"/>
+		</xsl:call-template>
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>
+	
 
    <!-- *********************************************************** -->
    <!-- Match: book-part
@@ -381,24 +524,35 @@
         1) cannot be empty 
 		  2) The book-part-type attribute is required
 		  3) id is required
+		  4) If book and a main unit, must have title and ID
      -->
    <xsl:template match="book-part">
       <xsl:call-template name="empty-element-check"/>
-      <xsl:call-template name="attribute-present-not-empty">
-         <xsl:with-param name="context" select="@book-part-type"/>
-         <xsl:with-param name="attribute-name" select="'book-part-type'"/>
-         <xsl:with-param name="test-name" select="'book-part-type attribute check'"/>
-			</xsl:call-template>
-      <xsl:if test="normalize-space(parent::book-part-wrapper/@id) = '' ">
-           <xsl:call-template name="attribute-present-not-empty">
-             <xsl:with-param name="context" select="@id"/>
-             <xsl:with-param name="attribute-name" select="'id'"/>
-             <xsl:with-param name="test-name" select="'book-part id attribute check'"/>
-          </xsl:call-template>
-      </xsl:if>
+      <xsl:call-template name="book-main-unit-check"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
-		
+	
+	<!-- *********************************************************** -->
+	<!-- Match: book-part-id (BITS)
+       Tests: 
+        1) cannot be empty 
+        2) must have book-part-id-type
+        3) If contains doi, must be right format 
+     -->
+	<xsl:template match="book-part-id">
+		<xsl:call-template name="empty-element-check"/>
+		<xsl:call-template name="attribute-present-not-empty">
+			<xsl:with-param name="context" select="@book-part-id-type"/>
+			<xsl:with-param name="attribute-name" select="'book-part-id-type'"/>
+			<xsl:with-param name="test-name" select="'book-part-id-type attribute check'"/>
+		</xsl:call-template>
+		<xsl:if test="@book-part-id-type = 'doi'">
+			<xsl:call-template name="doi-check">
+				<xsl:with-param name="value" select="."/>
+			</xsl:call-template>
+		</xsl:if>
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>	
 
    <!-- *********************************************************** -->
    <!-- Match: book-part-wrapper (BITS)
@@ -406,11 +560,43 @@
        Tests: 
         1) cannot be empty 
      -->
-   <xsl:template match="book-part-wrapper">
-      <xsl:call-template name="empty-element-check"/>      
-      <xsl:apply-templates select="." mode="output"/>
-   </xsl:template>
+	<xsl:template match="book-part-wrapper">
+		<xsl:call-template name="empty-element-check"/>
+		<xsl:apply-templates select="." mode="output"/>
+		<xsl:if test="book-part and not(book-part/@id[normalize-space()]) ">
+			<xsl:call-template name="attribute-present-not-empty">
+				<xsl:with-param name="context" select="@id"/>
+				<xsl:with-param name="attribute-name" select="'id'"/>
+				<xsl:with-param name="test-name" select="'book-part-wrapper id attribute check'"/>
+			</xsl:call-template>
+		</xsl:if>
+	</xsl:template>
+	
+	<!-- *********************************************************** -->
+	<!-- Match: book-title 
 
+       Tests: 
+        1) cannot be empty      
+     -->
+	<xsl:template match="book-title">
+		<xsl:call-template name="empty-element-check"/>  
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>
+	
+	
+	<!-- *********************************************************** -->
+	<!-- Match: book-title-group 
+		
+		Tests:
+        1) must include book-title        
+     -->
+	<xsl:template match="book-title-group">
+		<xsl:call-template name="child-present">
+			<xsl:with-param name="child" select="'book-title'"/>
+		</xsl:call-template>
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>
+	
 
     <!-- *********************************************************** -->
    <!-- Match: book-volume-id (BITS)
@@ -435,24 +621,11 @@
    <!-- *********************************************************** -->
    <!-- Match: boxed-text
         1) cannot be empty 
-		    2) in books, boxed-text in boxed-text may not be referenced
-		    3) in books, floating boxes must be referenced.
      -->
    <xsl:template match="boxed-text">
 		 <xsl:call-template name="ms-stream-id-test"/>
-     <xsl:call-template name="empty-element-check"/>
-		 <xsl:if test="($document-type='book' or $document-type='book-part') and ancestor::boxed-text">		  
-			<xsl:call-template name="check-for-xref">	
-				<xsl:with-param name="context" select="."/>
-				<xsl:with-param name="inbox" select="'yes'"/>
-				</xsl:call-template>
-		 </xsl:if>
-     <!-- Check for a cross-reference to a floating box. -->
-     <!--<xsl:if test="$stream='book' and @position!='anchor' and not(ancestor::boxed-text)">		  
-		   <xsl:call-template name="float-obj-check">	
-				 <xsl:with-param name="context" select="."/>
-			 </xsl:call-template>
-		 </xsl:if>-->
+     <xsl:call-template name="empty-element-check"/>	
+     <xsl:call-template name="book-stream-id-test"/>
      <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
 
@@ -479,9 +652,11 @@
    <!-- *********************************************************** -->
    <!-- Match: chem-struct
         1) xlink:href cannot be empty
+        3) check xmlns:xlink
      -->
    <xsl:template match="chem-struct">
       <xsl:call-template name="href-content-check"/>
+      <xsl:call-template name="xlink-ns-check"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
@@ -505,13 +680,26 @@
 		<xsl:call-template name="citation-alternatives-content-check"/>
 		<xsl:apply-templates select="." mode="output"/>
 	</xsl:template>
+	
+	<!-- *********************************************************** -->
+	<!-- Match: col
+        1) span attributes must contain a numeric value 
+     -->
+	<!-- *********************************************************** -->
+	<xsl:template match="col">
+		<xsl:call-template name="table-span-check"/>
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>	
+	
 
    <!-- *********************************************************** -->
    <!-- Match: colgroup
         1) cannot be empty 
+        2) span attributes must contain a numeric value 
      -->
    <xsl:template match="colgroup">
       <xsl:call-template name="empty-element-check"/>
+      <xsl:call-template name="table-span-check"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
@@ -521,12 +709,14 @@
         1) xlink:href cannot be empty
         2) cannot be empty
         3) collab-content-check
+        4) check xmlns:xlink
      -->
    <!-- *********************************************************** -->
    <xsl:template match="collab">   
       <xsl:call-template name="href-content-check"/>
    	<xsl:call-template name="empty-element-check"/>
       <xsl:call-template name="collab-content-check"/>
+      <xsl:call-template name="xlink-ns-check"/>
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
 	
@@ -534,7 +724,7 @@
 	<!-- *********************************************************** -->
 	<!-- Match: collab-alternatives
 		1) cannot be empty
-		2) collab-alternatives-content-check -->
+		2) collab-alternatives-content-check-->
 	<!-- *********************************************************** -->
 	<xsl:template match="collab-alternatives">
 		<xsl:call-template name="href-content-check"/>
@@ -578,12 +768,13 @@
 
        Tests: 
         1) cannot be empty 
+        2) check xmlns:xlink
      -->
    <!-- *********************************************************** -->
    <xsl:template match="conference">
 
       <xsl:call-template name="empty-element-check"/>
-
+      <xsl:call-template name="xlink-ns-check"/>
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
 
@@ -621,6 +812,7 @@
         2) cannot be empty 
         
         3) no xlink attributes
+        4) xlmns:xlink check
         
      -->
    <!-- *********************************************************** -->
@@ -638,12 +830,10 @@
 				</xsl:otherwise>
 			</xsl:choose>
 	
-      <xsl:call-template name="contrib-author-notes-test"/>
-
       <xsl:call-template name="contrib-content-test"/>
 	
      <!--  <xsl:call-template name="xlink-attribute-check"/>  -->
-
+      <xsl:call-template name="xlink-ns-check"/>	
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
 
@@ -671,9 +861,10 @@
       	<xsl:call-template name="ms-contrib-group-aff-test"/>
       </xsl:if>
    	
-   	<xsl:if test="parent::collab">
+   <!-- PMC-29933
+		<xsl:if test="parent::collab">
    		<xsl:call-template name="collab-contribgrp-check"/>
-   	</xsl:if>
+   	</xsl:if>  -->
       
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
@@ -692,6 +883,19 @@
 	</xsl:template>
    
 
+   <!-- *********************************************************** -->
+   <!-- Match: copyright-statement
+        1) should not contain license info
+     -->
+   <!-- *********************************************************** -->
+   <xsl:template match="copyright-statement">
+      
+      <xsl:call-template name="copyright-statement-check"/>
+      
+      <xsl:apply-templates select="." mode="output"/>
+   </xsl:template>
+   
+   
    <!-- *********************************************************** -->
    <!-- Match: copyright-year
         1) must be valid value
@@ -716,7 +920,19 @@
               
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
-
+	
+	
+	<!-- *********************************************************** -->
+	<!-- Match: custom-meta
+        1) check xmlns:xlink
+     -->
+	<!-- *********************************************************** -->
+	<xsl:template match="custom-meta">
+		
+		<xsl:call-template name="xlink-ns-check"/>
+		
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>
 
    <!-- *********************************************************** -->
    <!-- Match: date
@@ -728,7 +944,9 @@
    
       <xsl:call-template name="empty-element-check"/>
       
-      <xsl:call-template name="history-date-type-attribute-check"/>
+      <xsl:if test="parent::history">
+         <xsl:call-template name="history-date-type-attribute-check"/>
+      </xsl:if>
 		
 		<xsl:call-template name="date-check"/>
               
@@ -761,9 +979,12 @@
    <!-- *********************************************************** -->
    <!-- Match: dedication (BITS)
         1) cannot be empty 
+        2) If book and a main unit, must have title and ID
      -->
    <xsl:template match="dedication">
       <xsl:call-template name="empty-element-check"/>
+      <xsl:call-template name="book-main-unit-check"/>
+      <xsl:call-template name="book-stream-id-test"/>   	
       <xsl:apply-templates select="." mode="output"/>
     </xsl:template>       
     
@@ -798,18 +1019,13 @@
    <!-- *********************************************************** -->
    <!-- Match: disp-quote
         1) cannot be empty 
-		  2) In books, cannot contain <preformat>
      -->
    <!-- *********************************************************** -->
    <xsl:template match="disp-quote">
 
 		<xsl:call-template name="ms-stream-id-test"/>
 
-      <xsl:call-template name="empty-element-check"/>
-              
-		<xsl:if test="$stream='book'">
-			<xsl:call-template name="disp-quote-content-check"/>
-			</xsl:if>		  
+      <xsl:call-template name="empty-element-check"/> 
 				  
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
@@ -849,27 +1065,54 @@
    <!-- Match: element-citation
 			1) cannot be empty.
 			2) @xlink:href cannot be empty
+			3) check xmlns:xlink
 			-->
    <xsl:template match="element-citation">   
       <xsl:call-template name="empty-element-check"/>
 		<xsl:call-template name="href-content-check"/>
+      <xsl:call-template name="xlink-ns-check"/>
+      <xsl:call-template name="book-stream-id-test"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
-			
+	
+	<!-- *********************************************************** -->
+	<!-- Match: elocation-id
+        1) cannot be empty
+     -->
+	<!-- *********************************************************** -->
+	<xsl:template match="elocation-id">
+		
+		<xsl:call-template name="empty-element-check"/>
+		
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>
+	
 
    <!-- *********************************************************** -->
    <!-- Match: email
         1) xlink:href cannot be empty
+        2) check xmlns:xlink
      -->
    <!-- *********************************************************** -->
    <xsl:template match="email">
    
       <xsl:call-template name="href-content-check"/>
-              
+      <xsl:call-template name="xlink-ns-check"/>        
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
-
-
+	
+	<!-- *********************************************************** -->
+	<!-- Match: extended-by
+        1) check xmlns:xlink
+     -->
+	<!-- *********************************************************** -->
+	<xsl:template match="extended-by">
+		
+		<xsl:call-template name="xlink-ns-check"/>
+		
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>
+	
     <!-- *********************************************************** -->
    <!-- Match: ext-link
         1) if contains a DOI, must be correct format
@@ -881,6 +1124,11 @@
         4) xlink:href cannot be empty
         
         5) if ancestor::license, check content
+        
+        6) if ancestor::license, check for invalid CC licenses
+        
+        7) check xmlns:xlink
+       
      -->
    <!-- *********************************************************** -->
    <xsl:template match="ext-link">
@@ -900,11 +1148,14 @@
       <xsl:call-template name="href-content-check"/>
    	
    	<xsl:if test="ancestor::license">
-   		<xsl:call-template name="license-ext-link-content-check">   			
+   		<!--<xsl:call-template name="license-ext-link-content-check">   			
    			<xsl:with-param name="context" select="."/>
+   		</xsl:call-template>-->
+   		<xsl:call-template name="license-cc-url-check">
+   			<xsl:with-param name="href" select="@xlink:href"/>
    		</xsl:call-template>
    	</xsl:if>
-
+		<xsl:call-template name="xlink-ns-check"/>
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
 
@@ -912,8 +1163,6 @@
    <!-- *********************************************************** -->
    <!-- Match: fig
         1) cannot be empty 
-        
-	2) in books, figs in boxed-text may not be referenced
      -->
    <!-- *********************************************************** -->
    <xsl:template match="fig">
@@ -923,26 +1172,8 @@
 
 		<xsl:if test="$stream='manuscript'">
 			<xsl:call-template name="id-content-test"/>
-		</xsl:if>
-    
-    <!--
-        In Word books, if the figure is in a box,
-        make sure it is not directly referenced
-    -->
-		<xsl:if test="$stream='book' and ancestor::boxed-text">		  
-		<!-- Test 2 -->
-			<xsl:call-template name="check-for-xref">	
-				<xsl:with-param name="context" select="."/>
-				<xsl:with-param name="inbox" select="'yes'"/>
-			</xsl:call-template>
-		</xsl:if>
-    <!-- Check for a cross-reference to a floating figure. -->
-    <!--<xsl:if test="$stream='book' and @position='float' and not(ancestor::boxed-text)">		  
-		  <xsl:call-template name="float-obj-check">	
-				<xsl:with-param name="context" select="."/>
-			</xsl:call-template>
-		</xsl:if>-->
-			
+		</xsl:if>    
+      <xsl:call-template name="book-stream-id-test"/>
     <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
 
@@ -966,14 +1197,7 @@
 					</xsl:with-param>
 				</xsl:call-template>
 			</xsl:if>
-		<xsl:if test="$stream='book' and ancestor::boxed-text">		  
-		<!-- Test 3 -->
-			<xsl:call-template name="check-for-xref">	
-				<xsl:with-param name="context" select="."/>
-				<xsl:with-param name="inbox" select="'yes'"/>
-				</xsl:call-template>
-			</xsl:if>
-
+      <xsl:call-template name="book-stream-id-test"/>
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
 	
@@ -986,7 +1210,7 @@
 	-->
 	<!-- *********************************************************** -->
 	<xsl:template match="floats-group">
-		<xsl:call-template name="floats-wrap-check"/>
+		<xsl:call-template name="floats-wrap-check"/>		
 		<xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 	
@@ -1006,35 +1230,33 @@
    <!-- *********************************************************** -->
    <!-- Match: fn
         1) when inside author notes, fn-type cannot be certain values
-
         2) check attributes (id and symbol)
-        
         3) article-level footnotes should be in back
-        
         4) fn in tables should be in table-wrap-foot
+        5) If @custom-type is present, value of @fn-type must be "custom";
+           if @fn-type="custom", @custom-type must be present and non-empty
      -->
    <!-- *********************************************************** -->
    <xsl:template match="fn">
-   
-		<xsl:call-template name="ms-stream-id-test"/>
-		
-		<xsl:if test="$stream='manuscript'">
-			<xsl:call-template name="ms-footnote-license-check"/>
-			</xsl:if>
-			
+      <xsl:call-template name="ms-stream-id-test"/>
+      <xsl:if test="$stream='manuscript'">
+         <xsl:call-template name="ms-footnote-license-check"/>
+      </xsl:if>
       <xsl:if test="parent::author-notes">
          <xsl:call-template name="author-notes-fn-type-check">
             <xsl:with-param name="context" select="."/>
          </xsl:call-template>
       </xsl:if>
-
       <xsl:call-template name="fn-attribute-check"/>
-
       <!-- no longer testing location of footnote
 		<xsl:call-template name="fn-location-check"/> -->
-
       <xsl:call-template name="table-fn-check"/>
-              
+      <xsl:if test="@custom-type or @fn-type='custom'">
+         <xsl:call-template name="custom-type-check">
+            <xsl:with-param name="standard-type" select="@fn-type"/>
+            <xsl:with-param name="attribute-name" select="'fn-type'"/>
+         </xsl:call-template>
+      </xsl:if>
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
 
@@ -1047,7 +1269,6 @@
    <xsl:template match="fn-group">
    
       <xsl:call-template name="back-element-check"/>
-              
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
 
@@ -1055,10 +1276,13 @@
    <!-- *********************************************************** -->
    <!-- Match: foreword (BITS)
         1) cannot be empty 
+        2) If book and a main unit, must have title and ID
      -->
    <!-- *********************************************************** -->
    <xsl:template match="foreword">
       <xsl:call-template name="empty-element-check"/>
+      <xsl:call-template name="book-main-unit-check"/>
+      <xsl:call-template name="book-stream-id-test"/>
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
       
@@ -1066,12 +1290,13 @@
    <!-- *********************************************************** -->
    <!-- Match: fpage
         1) In article-meta, should be followed by lpage
+        2) cannot be empty 
      -->
    <!-- *********************************************************** -->
    <xsl:template match="fpage">
    
       <xsl:call-template name="lpage-check"/>
-              
+   	<xsl:call-template name="empty-element-check"/>
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
 
@@ -1107,10 +1332,13 @@
    
    <!-- *********************************************************** -->
    <!-- Match: front-matter-part (BITS)
-        1) cannot be empty 
+        1) cannot be empty
+        2) If book and a main unit, must have title and ID
      -->
    <xsl:template match="front-matter-part">
       <xsl:call-template name="empty-element-check"/>
+      <xsl:call-template name="book-main-unit-check"/>
+      <xsl:call-template name="book-stream-id-test"/>
       <xsl:apply-templates select="." mode="output"/>
     </xsl:template>    
     
@@ -1129,11 +1357,13 @@
    <!-- Match: funding-source
 			1) cannot be empty.
 			2) @xlink:href cannot be empty.
+			3) check xmlns:xlink
 			-->
    <!-- *********************************************************** -->
    <xsl:template match="funding-source">   
       <xsl:call-template name="empty-element-check"/>
 		<xsl:call-template name="href-content-check"/>
+   	 <xsl:call-template name="xlink-ns-check"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
@@ -1141,11 +1371,13 @@
    <!-- Match: funding-statement
 			1) cannot be empty.
 			2) @xlink:href cannot be empty.
+			3) check xmlns:xlink
 			-->
    <!-- *********************************************************** -->
    <xsl:template match="funding-statement">   
       <xsl:call-template name="empty-element-check"/>
 		<xsl:call-template name="href-content-check"/>
+   	 <xsl:call-template name="xlink-ns-check"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 			
@@ -1165,11 +1397,14 @@
    <!-- Match: glossary
         1) should not appear inside body
         2) cannot be empty
+        3) If book and a main unit, must have title and ID
      -->
    <!-- *********************************************************** -->
    <xsl:template match="glossary">
 		<xsl:call-template name="back-element-check"/>
 		<xsl:call-template name="empty-element-check"/>
+   	        <xsl:call-template name="book-main-unit-check"/>
+   	        <xsl:call-template name="book-stream-id-test"/>
 		<xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
@@ -1178,12 +1413,13 @@
    <!-- Match: graphic
         1) check whether alt-version use is correct
         2) xlink:href cannot be empty
-        
+        3) check xmlns:xlink
      -->
    <!-- *********************************************************** -->
    <xsl:template match="graphic">
 		<xsl:call-template name="graphic-alt-version-check"/>
 		<xsl:call-template name="href-content-check"/>
+   	 <xsl:call-template name="xlink-ns-check"/>
 		<xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
@@ -1271,26 +1507,46 @@
    <!-- *********************************************************** -->
    <!-- Match: inline-graphic
         1) xlink:href cannot be empty
+        2) check xmlns:xlink
      -->
    <!-- *********************************************************** -->
    <xsl:template match="inline-graphic">
 		<xsl:call-template name="href-content-check"/>
+   	 <xsl:call-template name="xlink-ns-check"/>
 		<xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
-
+	
+	<!-- *********************************************************** -->
+	<!-- Match: inline-media
+        1) check xmlns:xlink
+     -->
+	<!-- *********************************************************** -->
+	<xsl:template match="inline-media">
+		
+		<xsl:call-template name="xlink-ns-check"/>
+		
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>
 
    <!-- *********************************************************** -->
    <!-- Match: inline-supplementary-material
         1) xlink:href cannot be empty
+        2) check xmlns:xlink
      -->
    <!-- *********************************************************** -->
    <xsl:template match="inline-supplementary-material">
-		<xsl:call-template name="href-content-check"/>
+      <xsl:call-template name="attribute-present-not-empty">
+         <xsl:with-param name="context" select="@xlink:href"/>
+         <xsl:with-param name="attribute-name" select="'xlink:href'"/>
+         <xsl:with-param name="test-name" select="'inline-supplementary-material'"/>
+      </xsl:call-template>
+      <xsl:call-template name="href-content-check"/>
 		<xsl:if test="@xlink:href">
 	      <xsl:call-template name="href-ext-check">
  	        <xsl:with-param name="href" select="@xlink:href"/>
  	     </xsl:call-template>
 		  </xsl:if> 
+   	<xsl:call-template name="xlink-ns-check"/>
 		<xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
@@ -1298,10 +1554,12 @@
    <!-- *********************************************************** -->
    <!-- Match: institution
         1) xlink:href cannot be empty
+        2) check xmlns:xlink
      -->
    <!-- *********************************************************** -->
    <xsl:template match="institution">
 		<xsl:call-template name="href-content-check"/>
+   	 <xsl:call-template name="xlink-ns-check"/>
 		<xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
@@ -1349,6 +1607,7 @@
    <!-- *********************************************************** -->
    <!-- Match: issue-id
         1) if contains a DOI, must be correct format
+        2) check xmlns:xlink
      -->
    <!-- *********************************************************** -->
    <xsl:template match="issue-id">
@@ -1357,6 +1616,7 @@
 				<xsl:with-param name="value" select="."/>
 				</xsl:call-template>
 			</xsl:if>
+   	 <xsl:call-template name="xlink-ns-check"/>	
 		<xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 	
@@ -1440,6 +1700,8 @@
    <!-- Match: license
         1) xlink:href cannot be empty
         2) license integrity check
+        3) cc license URL check
+        4) check xmlns:xlink
      -->
    <!-- *********************************************************** -->
    <xsl:template match="license">
@@ -1447,6 +1709,10 @@
    		<xsl:call-template name="license-integrity-check">   			
    			<xsl:with-param name="context" select="."/>
    		</xsl:call-template>
+	   	<xsl:call-template name="license-cc-url-check">
+	   		<xsl:with-param name="href" select="@xlink:href"/>
+	   	</xsl:call-template>
+   	    <xsl:call-template name="xlink-ns-check"/>
 		<xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
@@ -1464,8 +1730,7 @@
    <!-- Match: list
         1) q-and-a list need to have correct content
         2) list-type attribute needs correct value
-		  3) in books, lists may not have titles
-		  4) in books, lists may not be referenced by xref
+        3) continued-from attribute may not point to the parent list
      -->
    <!-- *********************************************************** -->
    <xsl:template match="list">
@@ -1475,21 +1740,9 @@
       <xsl:call-template name="list-q-and-a-check"/>
 
       <xsl:call-template name="list-type-check"/>
-              				
-		<xsl:if test="$stream='book'">		  
-		<!-- Test 4 -->
-			<xsl:call-template name="check-for-xref">	
-				<xsl:with-param name="context" select="."/>
-				</xsl:call-template>
-				<!--
-			<xsl:if test="$editstyle='word'">
-				<xsl:call-template name="list-title-check">
-					<xsl:with-param name="context" select="."/>
-					</xsl:call-template>
-				</xsl:if>
-				-->
-			</xsl:if>
-				  
+   	
+      <xsl:call-template name="list-continued-check"/>
+   	
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
    
@@ -1497,31 +1750,47 @@
    <!-- *********************************************************** -->
    <!-- Match: list-item
         1) check content for disallowed children (like label)
-		  2) in books, lists may not be referenced by xref
      -->
   <!-- ********************************************************************** -->
    <xsl:template match="list-item">
    
       <xsl:call-template name="list-item-content-check"/>
-		
-		<xsl:if test="$stream='book'">		  
-			<xsl:call-template name="check-for-xref">	
-				<xsl:with-param name="context" select="."/>
-				</xsl:call-template>
-			</xsl:if>
               
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
+	
+	<!-- *********************************************************** -->
+	<!-- Match: long-desc
+        1) check xmlns:xlink
+     -->
+	<!-- *********************************************************** -->
+	<xsl:template match="long-desc">
+		
+		<xsl:call-template name="xlink-ns-check"/>
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>
 
+	<!-- *********************************************************** -->
+	<!-- Match: lpage
+        1) cannot be empty 
+     -->
+	<!-- *********************************************************** -->
+	<xsl:template match="lpage">
+		
+		<xsl:call-template name="empty-element-check"/>
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>
+	
    <!-- *********************************************************** -->
    <!-- Match: media
         1) xlink:href cannot be empty
+        2) check xmlns:xlink
      -->
    <!-- *********************************************************** -->
    <xsl:template match="media">
                  
       <xsl:call-template name="href-content-check"/>
-
+      <xsl:call-template name="xlink-ns-check"/>
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
    
@@ -1529,11 +1798,14 @@
    <!-- Match: mixed-citation
 			1) cannot be empty.
 			2) @xlink:href cannot be empty
+			3) check xmlns:xlink
 			-->
    <!-- *********************************************************** -->
    <xsl:template match="mixed-citation">   
       <xsl:call-template name="empty-element-check"/>
 		<xsl:call-template name="href-content-check"/>
+      <xsl:call-template name="book-stream-id-test"/>
+   	<xsl:call-template name="xlink-ns-check"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 			
@@ -1744,6 +2016,30 @@
             <xsl:with-param name="expected-parent" select="'mmultiscripts'"/>
          </xsl:call-template>
       </xsl:if>
+      
+      <!-- ND-2292: add check for maligngroup -->
+      <xsl:if test="local-name(.) = 'maligngroup'">
+         <xsl:choose>
+            <!-- PMC-44007: misinterpret MathML 3.0 rules, mrow is inferred and malingroup is okay -->
+            <xsl:when test="local-name(parent::node()) = 'math'"/>
+            <xsl:when test="local-name(parent::node()) = 'mtd' and preceding-sibling::* or following-sibling::*"/>
+            <xsl:when test="local-name(parent::node()) = 'mrow'"/>
+            <xsl:when test="local-name(parent::node()) = 'mstyle'"/>
+            <xsl:when test="local-name(parent::node()) = 'mphantom'"/>
+            <xsl:when test="local-name(parent::node()) = 'mfenced'"/>
+            <xsl:when test="local-name(parent::node()) = 'maction'"/>
+            <xsl:when test="local-name(parent::node()) = 'semantics'"/>
+            <xsl:otherwise>
+               <xsl:call-template name="mathml-parent-el-check">
+                  <xsl:with-param name="expected-parent" select="'math | mtd | mrow | mstyle | mphantom | mfenced | maction | semantics'"/>
+               </xsl:call-template>
+            </xsl:otherwise>
+         </xsl:choose>
+      </xsl:if>
+      
+      <!-- ND-2292: add ancestor check -->
+      <!-- PMC-44007: remove this, maligngroup can be a child of math -->
+      
 
     <!--   <xsl:if test="local-name(.) = 'mrow'">
          <xsl:call-template name="mathml-mrow-content-check"/>
@@ -1811,23 +2107,20 @@
 
    <!-- *********************************************************** -->
    <!-- Match: named-book-part-body (BITS)
-        1) 
+        1) cannot be empty 
      -->
    <!-- *********************************************************** -->
-   <!--<xsl:template match="named-book-part-body">
-  
+   <xsl:template match="named-book-part-body">
+      <xsl:call-template name="empty-element-check"/>
       <xsl:apply-templates select="." mode="output"/>
-   </xsl:template>-->
+   </xsl:template>
    
 
    <!-- *********************************************************** -->
    <!-- Match: named-content
         1) cannot be empty 
-        2) xlink:href cannot be empty
-		  3) content-types for book should be in list ncbi_app, ncbi_class, ncbi_cmd, ncbi_code
-		     ncbi_func, ncbi_lib, ncbi_macro, ncbi_monospace, ncbi_path, ncbi_type, ncbi_var
-
-        
+        2) xlink:href cannot be empty    
+        3) check xmlns:xlink
      -->
    <!-- *********************************************************** -->
    <xsl:template match="named-content">
@@ -1835,13 +2128,7 @@
       <xsl:call-template name="empty-element-check"/>
 
       <xsl:call-template name="href-content-check"/>
-        
-		 <xsl:if test="$stream='book'">
-
-			<xsl:call-template name="named-content-type-check">
-				<xsl:with-param name="context" select="."/>
-				</xsl:call-template>
-			</xsl:if>	 	  
+      <xsl:call-template name="xlink-ns-check"/>
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
    
@@ -1866,8 +2153,18 @@
   
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>-->   
-   
-
+	
+	<!-- *********************************************************** -->
+	<!-- Match: nlm-citation
+        1) check xmlns:xlink
+     -->
+	<!-- *********************************************************** -->
+	<xsl:template match="nlm-citation">
+		
+		<xsl:call-template name="xlink-ns-check"/>
+		
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>
 
    <!-- *********************************************************** -->
    <!-- Match: note
@@ -1889,6 +2186,7 @@
         2) if a disclaimer, must be in front
         3) cannot be empty 
         4) note in proof should be in back
+        5) If book and a main unit, must have title and ID
      -->
    <!-- *********************************************************** -->
    <xsl:template match="notes">
@@ -1896,6 +2194,8 @@
       <xsl:call-template name="disclaimer-notes-check"/>
       <xsl:call-template name="empty-element-check"/>
       <xsl:call-template name="notes-in-proof-check"/>
+      <xsl:call-template name="book-main-unit-check"/>
+      <xsl:call-template name="book-stream-id-test"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
@@ -1993,12 +2293,20 @@
    <!-- *********************************************************** -->
    <!-- Match: person-group
         1) cannot be empty 
+        2) If @custom-type is present, value of @person-group-type must be "custom";
+           if @person-group-type="custom", @custom-type must be present and non-empty
      -->
    <!-- *********************************************************** -->
    <xsl:template match="person-group">
       <xsl:call-template name="empty-element-check"/>
+      <xsl:if test="@custom-type or @person-group-type='custom'">
+         <xsl:call-template name="custom-type-check">
+            <xsl:with-param name="standard-type" select="@person-group-type"/>
+            <xsl:with-param name="attribute-name" select="'person-group-type'"/>
+         </xsl:call-template>
+      </xsl:if>
       <xsl:apply-templates select="." mode="output"/>
-		</xsl:template>
+   </xsl:template>
    
 
    <!-- *********************************************************** -->
@@ -2037,19 +2345,11 @@
    <!-- *********************************************************** -->
    <!-- Match: preformat
         1) cannot be empty 
-		  2) in books cannot have lines > 76 chars 
      -->
    <!-- *********************************************************** -->
    <xsl:template match="preformat">
    
-      <xsl:call-template name="empty-element-check"/>
-
-		<!--<xsl:if test="$editstyle='word' and $stream='book'">      
-			<xsl:call-template name="preformat-line-length-check">
-				<xsl:with-param name="context" select="."/>
-				</xsl:call-template>
-			</xsl:if>-->
-              
+      <xsl:call-template name="empty-element-check"/>             
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
    
@@ -2089,11 +2389,13 @@
    <!-- Match: product
         1) cannot be empty 
         2) xlink:href cannot be empty
+        3) check xmlns:xlink
      -->
    <!-- *********************************************************** -->
    <xsl:template match="product">
       <xsl:call-template name="empty-element-check"/>
       <xsl:call-template name="href-content-check"/>
+      <xsl:call-template name="xlink-ns-check"/>
 		<xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
@@ -2124,8 +2426,12 @@
    <!-- Match: pub-id
         1) if contains doi, must be right format
 		     BECK - not taking responsibility for DOIs in reflist
-        2) cannot be empty 
-        3) pub-id-type attribute must have approved value
+	2) if contains pmid, must be right format
+        3) cannot be empty 
+        4) pub-id-type attribute must have approved value
+        5) check xmlns:xlink
+        6) If @custom-type is present, value of @pub-id-type must be "custom";
+           if @pub-id-type="custom", @custom-type must be present and non-empty
      -->
    <!-- *********************************************************** -->
    <xsl:template match="pub-id">
@@ -2136,9 +2442,22 @@
          </xsl:call-template>
       </xsl:if>
 
-      <xsl:call-template name="empty-element-check"/>
+      <xsl:if test="@pub-id-type = 'pmid'">
+	<xsl:call-template name="pmid-check">
+	  <xsl:with-param name="value" select="."/>
+	</xsl:call-template>
+      </xsl:if>
 
+      <xsl:call-template name="empty-element-check"/>
       <xsl:call-template name="pub-id-check"/>
+      <xsl:call-template name="xlink-ns-check"/>
+
+      <xsl:if test="@custom-type or @pub-id-type='custom'">
+         <xsl:call-template name="custom-type-check">
+            <xsl:with-param name="standard-type" select="@pub-id-type"/>
+            <xsl:with-param name="attribute-name" select="'pub-id-type'"/>
+         </xsl:call-template>
+      </xsl:if>
 
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
@@ -2146,11 +2465,17 @@
    <!-- *********************************************************** -->
    <!-- Match: publisher
         1) cannot be empty 
+        2) for books in book-meta: must have publisher-loc
      -->
    <!-- *********************************************************** -->
    <xsl:template match="publisher">
       <xsl:call-template name="empty-element-check"/>
       <xsl:apply-templates select="." mode="output"/>
+   	  <xsl:if test="$stream = 'book' and parent::book-meta">
+   	  	<xsl:call-template name="child-present">
+   	  		<xsl:with-param name="child" select="'publisher-loc'"/>
+   	  	</xsl:call-template>
+   	  </xsl:if>
 		</xsl:template>
 
 
@@ -2185,17 +2510,33 @@
       <xsl:call-template name="empty-element-check"/>
       <xsl:apply-templates select="." mode="output"/>
     </xsl:template>
-		
-		
+    
+     
    <!-- *********************************************************** -->
-   <!-- Match: Match: question-wrap (BITS)
-        1)
+   <!-- Match: question-preamble (BITS2)
      -->
    <!-- *********************************************************** -->
-   <!--<xsl:template match="question-wrap">
-      
+   <!--<xsl:template match="question-preamble">      
       <xsl:apply-templates select="." mode="output"/>
-		</xsl:template>-->
+    </xsl:template>-->
+    
+    
+   <!-- *********************************************************** -->
+   <!-- Match: question-preamble (BITS2)
+     -->
+   <!-- *********************************************************** -->
+   <!--<xsl:template match="question-preamble">      
+      <xsl:apply-templates select="." mode="output"/>
+    </xsl:template>-->
+    
+    
+   <!-- *********************************************************** -->
+   <!-- Match: question-wrap-group (BITS2)
+     -->
+   <!-- *********************************************************** -->
+   <!--<xsl:template match="question-wrap-group">      
+      <xsl:apply-templates select="." mode="output"/>
+    </xsl:template>-->
 		
 
    <!-- *********************************************************** -->
@@ -2215,10 +2556,13 @@
   <!-- ********************************************************************* -->
    <!-- Match: ref-list
         1) cannot be empty 
+        2) If book and a main unit, must have title and ID
      -->
    <!-- *********************************************************** -->
    <xsl:template match="ref-list">
       <xsl:call-template name="empty-element-check"/>
+      <xsl:call-template name="book-main-unit-check"/>
+      <xsl:call-template name="book-stream-id-test"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
@@ -2231,6 +2575,7 @@
         4) 
         5) xlink:href cannot be empty
         6) if @xlink:href is a doi, @ext-link-type must be "doi"
+        7) check xmlns:xlink
        -->
    <!-- *********************************************************** -->
    <xsl:template match="related-article">
@@ -2263,7 +2608,9 @@
    	
    	<!-- Test 7 -->
    	<xsl:call-template name="related-article-self-test"/>
-              
+   	
+   	<!-- Test 8 -->
+   	<xsl:call-template name="xlink-ns-check"/>
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
    
@@ -2271,6 +2618,7 @@
    <!-- *********************************************************** -->
    <!-- Match: related-object
         1) Make sure the ids and id-types attributes are paired 
+        2) check xmlns:xlink
         -->
    <!-- *********************************************************** -->
    <xsl:template match="related-object">
@@ -2298,16 +2646,14 @@
    	<xsl:if test="@document-type='article'">
    		<xsl:call-template name="related-article-to-article-type-attribute"/>
    	</xsl:if>
+   	<xsl:call-template name="xlink-ns-check"/>
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
    
 
 
    <!-- *********************************************************** -->
-   <!-- Match: response
-        Manuscripts: 
-        1) Cannot be present
-        
+   <!-- Match: response        
         Non-manuscripts:
         1) Cannot be empty
         2) Must have @id
@@ -2316,53 +2662,71 @@
      -->
    <!-- *********************************************************** -->
    <xsl:template match="response | sub-article">
-     	<xsl:choose>
-   		<xsl:when test="$stream='manuscript'">
-	      <xsl:call-template name="make-error">
-				<xsl:with-param name="error-type" select="'illegal child'"/>
-   	      	<xsl:with-param name="description">
-      	      <xsl:text>&lt;</xsl:text>
-					<xsl:value-of select="name()"/>
-					<xsl:text>&gt; should not be used in a manuscript</xsl:text>
-         		</xsl:with-param>
-      		</xsl:call-template>
-   		</xsl:when>
-     		<xsl:otherwise>  	
-   			<xsl:call-template name="empty-element-check"/>
-			<xsl:call-template name="id-present-test"/>
-			<xsl:call-template name="attribute-present-not-empty">
-				<xsl:with-param name="attribute-name">
-					<xsl:choose>
-						<xsl:when test="local-name(.)='response'">
-							<xsl:text>response-type</xsl:text>
-						</xsl:when>
-						<xsl:otherwise>
-							<xsl:text>article-type</xsl:text>
-						</xsl:otherwise>
-					</xsl:choose>
-				</xsl:with-param>
-			</xsl:call-template>
-     			<xsl:if test="front/article-meta/article-id[@pub-id-type='doi'] | front-stub/article-id[@pub-id-type='doi']">
-   				<xsl:call-template name="subarticle-doi-check">
-   					<xsl:with-param name="my-doi" 
-   					select="front/article-meta/article-id[@pub-id-type='doi'] | front-stub/article-id[@pub-id-type='doi']"/>
-   					<xsl:with-param name="parent-doi"
-   						select="/article/front/article-meta/article-id[@pub-id-type='doi']"/>
-   				</xsl:call-template>
-   			</xsl:if>
-   		</xsl:otherwise>
-     	</xsl:choose>   	
+      <xsl:call-template name="article-type-content-check"/>
+      <xsl:call-template name="empty-element-check"/>
+      <xsl:call-template name="id-present-test"/>
+      <xsl:call-template name="attribute-present-not-empty">
+         <xsl:with-param name="context" select="@article-type | @response-type"/>
+         <xsl:with-param name="attribute-name">
+            <xsl:choose>
+               <xsl:when test="local-name(.)='response'">
+                  <xsl:text>response-type</xsl:text>
+               </xsl:when>
+               <xsl:otherwise>
+                  <xsl:text>article-type</xsl:text>
+               </xsl:otherwise>
+            </xsl:choose>
+         </xsl:with-param>
+      </xsl:call-template>
+      <xsl:if test="front/article-meta/article-id[@pub-id-type='doi'] | front-stub/article-id[@pub-id-type='doi']">
+         <xsl:call-template name="subarticle-doi-check">
+            <xsl:with-param name="my-doi" 
+               select="front/article-meta/article-id[@pub-id-type='doi'] | front-stub/article-id[@pub-id-type='doi']"/>
+            <xsl:with-param name="parent-doi"
+               select="/article/front/article-meta/article-id[@pub-id-type='doi']"/>
+         </xsl:call-template>
+      </xsl:if>
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
    
+	<!-- *********************************************************** -->
+	<!-- Match: resource-name
+        1) check xmlns:xlink
+     -->
+	<!-- *********************************************************** -->
+	<xsl:template match="resource-name">
+		
+		<xsl:call-template name="xlink-ns-check"/>
+		
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>
+	
+	<!-- *********************************************************** -->
+	<!-- Match: restricted-by
+        1) check xmlns:xlink
+     -->
+	<!-- *********************************************************** -->
+	<xsl:template match="restricted-by">
+		
+		<xsl:call-template name="xlink-ns-check"/>
+		
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>
 
    <!-- *********************************************************** -->
    <!-- Match: role
-        1) cannot be empty 
+        1) regular <role> cannot be empty 
+        2) CRediT <role> can be empty, if all @vocab-* attributes are
+           present and non-empty
      -->
    <!-- *********************************************************** -->
    <xsl:template match="role">
-      <xsl:call-template name="empty-element-check"/>
+      <xsl:choose>
+         <xsl:when test="@vocab != '' and @vocab-identifier != '' and @vocab-term != '' and @vocab-term-identifier != ''"/>
+         <xsl:otherwise>
+            <xsl:call-template name="empty-element-check"/>
+         </xsl:otherwise>
+      </xsl:choose>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
    
@@ -2423,12 +2787,12 @@
       
      <!-- As of 2015-07-21 we no longer enforce @sec-type values on first level sections.
 	  <xsl:choose>
-         <xsl:when test="$stream='book' or $stream='rrn'"/>
+         <xsl:when test="$stream='rrn'"/>
          <xsl:otherwise>
             <xsl:call-template name="sec-type-check"/>
          </xsl:otherwise>
       </xsl:choose> -->
-              
+      <xsl:call-template name="book-stream-id-test"/>         
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
    
@@ -2480,10 +2844,12 @@
   <!-- ********************************************************************* -->
    <!-- Match: self-uri
         1) xlink:href cannot be empty
+        2) check xmlns:xlink
      -->
    <!-- *********************************************************** -->
    <xsl:template match="self-uri">
       <xsl:call-template name="href-content-check"/>
+      <xsl:call-template name="xlink-ns-check"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
@@ -2606,7 +2972,7 @@
    <!-- *********************************************************** -->
    <xsl:template match="string-date">
       <xsl:call-template name="empty-element-check"/>
-		<xsl:if test="not(preceding-sibling::year)">   
+		<xsl:if test="(parent::pub-date or parent::date) and not(preceding-sibling::year)">   
 			<xsl:call-template name="make-error">
              <xsl:with-param name="error-type">date content check</xsl:with-param>
              <xsl:with-param name="description">
@@ -2758,11 +3124,14 @@
    <!-- Match: supplementary-material
         1) xlink:href cannot be empty
         2) @xlink:href on graphic, media, or supplementary-material elements must have file extension
+        3) check xmlns:xlink
      -->
    <!-- *********************************************************** -->
    <xsl:template match="supplementary-material">
  		<xsl:call-template name="ms-stream-id-test"/>
       <xsl:call-template name="href-content-check"/>
+
+      <xsl:apply-templates select="." mode="output"/>
 
       <xsl:choose>
          <xsl:when test="graphic[@xlink:href]">
@@ -2781,10 +3150,20 @@
             </xsl:call-template>
          </xsl:when>
       </xsl:choose>
-      
-      <xsl:apply-templates select="." mode="output"/>
+   	<xsl:call-template name="xlink-ns-check"/>
 		</xsl:template>
 
+	<!-- *********************************************************** -->
+	<!-- Match: support-source
+        1) check xmlns:xlink
+     -->
+	<!-- *********************************************************** -->
+	<xsl:template match="support-source">
+		
+		<xsl:call-template name="xlink-ns-check"/>
+		
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>
 
    <!-- *********************************************************** -->
    <!-- Match: surname
@@ -2800,10 +3179,13 @@
    <!-- *********************************************************** -->
    <!-- Match: table
         1) cannot be empty 
+        2) table-check
+        	2.1) books: should have only one tbody (warning)
      -->
    <!-- *********************************************************** -->
    <xsl:template match="table">
       <xsl:call-template name="empty-element-check"/>
+      <xsl:call-template name="table-check"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
    
@@ -2811,29 +3193,16 @@
    <!-- *********************************************************** -->
    <!-- Match: table-wrap
         1) cannot be empty 
-        		  
-	2) in books, figs in boxed-text may not be referenced
      -->
    <!-- *********************************************************** -->
    <xsl:template match="table-wrap">
  
 		<xsl:call-template name="ms-stream-id-test"/>
  
+      <xsl:call-template name="book-stream-id-test"/>
+ 
       <xsl:call-template name="empty-element-check"/>
-
-	  <xsl:if test="$stream='book' and ancestor::boxed-text">		  
-			<xsl:call-template name="check-for-xref">	
-				<xsl:with-param name="context" select="."/>
-				<xsl:with-param name="inbox" select="'yes'"/>
-				</xsl:call-template>
-	  </xsl:if>
-    <!-- Check for a cross-reference to a floating table. -->  
-    <!-- <xsl:if test="$stream='book' and @position!='anchor' and not(ancestor::boxed-text)">		  
-		   <xsl:call-template name="float-obj-check">	
-				 <xsl:with-param name="context" select="."/>
-			 </xsl:call-template>
-		 </xsl:if>-->
-              
+   	
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
 
@@ -2852,21 +3221,12 @@
 
    <!-- *********************************************************** -->
    <!-- Match: table-wrap-group
-        1) cannot be empty 
-        
-        2) in books, figs in boxed-text may not be referenced
+        1) cannot be empty        
      -->
    <!-- *********************************************************** -->
    <xsl:template match="table-wrap-group">
       <xsl:call-template name="empty-element-check"/>
-      
-		<xsl:if test="$stream='book' and ancestor::boxed-text">		  
-			<xsl:call-template name="check-for-xref">	
-				<xsl:with-param name="context" select="."/>
-				<xsl:with-param name="inbox" select="'yes'"/>
-				</xsl:call-template>
-			</xsl:if>
-			
+      <xsl:call-template name="book-stream-id-test"/>		
 		<xsl:if test="$stream='manuscript'">
 			<xsl:call-template name="make-error">
 				<xsl:with-param name="error-type" select="'element not allowed'"/>
@@ -2903,6 +3263,17 @@
       <xsl:call-template name="empty-element-check"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
+	
+	
+	<!-- *********************************************************** -->
+	<!-- Match: td
+        1) span attributes must contain a numeric value 
+     -->
+	<!-- *********************************************************** -->
+	<xsl:template match="td">
+		<xsl:call-template name="table-span-check"/>
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>
    
 
    <!-- *********************************************************** -->
@@ -2962,6 +3333,17 @@
       <xsl:apply-templates select="." mode="output"/>
    </xsl:template>
    
+   
+	<!-- *********************************************************** -->
+	<!-- Match: th
+        1) span attributes must contain a numeric value 
+     -->
+	<!-- *********************************************************** -->
+	<xsl:template match="th">
+		<xsl:call-template name="table-span-check"/>
+		<xsl:apply-templates select="." mode="output"/>
+	</xsl:template>	
+	
 
    <!-- *********************************************************** -->
    <!-- Match: thead
@@ -3026,9 +3408,15 @@
    <!-- *********************************************************** -->
    <xsl:template match="title-group">
       <xsl:call-template name="empty-element-check"/>
-		<xsl:if test="$stream='manuscript'">
+      <!--======================================================-->
+      <!--Removed this test, overhaul of manuscript
+         stylecheck rules KP 2015-11-03-->
+      <!--Manuscript to follow PMC rules-->
+      <!--======================================================-->
+		<!--<xsl:if test="$stream='manuscript'">
 			<xsl:call-template name="ms-title-group-check"/>
-			</xsl:if>
+			</xsl:if>-->
+      <!--======================================================-->
 		
       <xsl:apply-templates select="." mode="output"/>
 
@@ -3174,10 +3562,15 @@
    <!-- *********************************************************** -->
    <!-- Match: uri
         1) xlink:href cannot be empty
+        2) check xmlns:xlink
      -->
    <!-- *********************************************************** -->
    <xsl:template match="uri">
       <xsl:call-template name="href-content-check"/>
+      <xsl:if test="@content-type='orcid'">
+         <xsl:call-template name="orcid-in-uri-check"/>
+      </xsl:if>
+   	<xsl:call-template name="xlink-ns-check"/>
        <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
 
@@ -3217,10 +3610,12 @@
    <!-- *********************************************************** -->
    <!-- Match: volume-id
         1) cannot be empty 
+        2) check xmlns:xlink
      -->
    <!-- *********************************************************** -->
    <xsl:template match="volume-id">
       <xsl:call-template name="empty-element-check"/>
+      <xsl:call-template name="xlink-ns-check"/>
       <xsl:apply-templates select="." mode="output"/>
 		</xsl:template>
    
@@ -3274,18 +3669,30 @@
    <!-- Match: xref
         1) Content should not have trailing punctuation (warning) in articles
         2) Must point to the right thing based on the ref-type
+        3) in books: xref to <aff> must point to an aff with the same book-meta or book-part-meta ancestor 
+        4) If @custom-type is present, value of @ref-type must be "custom";
+           if @ref-type="custom", @custom-type must be present and non-empty
      -->
    <!-- *********************************************************** -->
    <xsl:template match="xref">
-		<xsl:choose>
-			<xsl:when test="$stream='book'"/>
-			<xsl:otherwise>
-   		   <xsl:call-template name="punctuation-in-xref"/>
-				</xsl:otherwise>
-			</xsl:choose>
+      <xsl:choose>
+         <xsl:when test="$stream='book'"/>
+         <xsl:otherwise>
+            <xsl:call-template name="punctuation-in-xref"/>
+         </xsl:otherwise>
+      </xsl:choose>
       <xsl:call-template name="xref-check"/>
+      <xsl:if test="$stream='book'">
+         <xsl:call-template name="xref-aff-book-check"/>
+      </xsl:if>
+      <xsl:if test="@custom-type or @ref-type='custom'">
+         <xsl:call-template name="custom-type-check">
+            <xsl:with-param name="standard-type" select="@ref-type"/>
+            <xsl:with-param name="attribute-name" select="'ref-type'"/>
+         </xsl:call-template>
+      </xsl:if>
       <xsl:apply-templates select="." mode="output"/>
-		</xsl:template>
+   </xsl:template>
 
 
 
